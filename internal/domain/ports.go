@@ -180,11 +180,13 @@ type PDFConvertRequest struct {
 	Lang         string `json:"lang"`
 	StripHeaders bool   `json:"strip_headers"`
 	PageMarkers  bool   `json:"page_markers"`
+	Engine       string `json:"engine"` // tesseract | claude | claude_all
 }
 
 type PDFConvertResult struct {
-	Markdown string `json:"markdown"`
-	OCRPages []int  `json:"ocr_pages"`
+	Markdown    string `json:"markdown"`
+	OCRPages    []int  `json:"ocr_pages"`
+	ClaudePages []int  `json:"claude_pages"`
 }
 
 type PDFUploaded struct {

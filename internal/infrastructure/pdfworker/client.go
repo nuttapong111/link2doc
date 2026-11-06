@@ -9,6 +9,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/nuttapong111/link2doc/internal/domain"
@@ -17,6 +18,10 @@ import (
 type Client struct {
 	base, token string
 	http        *http.Client
+
+	mu       sync.Mutex
+	claude   bool
+	claudeAt time.Time
 }
 
 func New(base, token string) *Client {
@@ -24,6 +29,28 @@ func New(base, token string) *Client {
 }
 
 func (c *Client) Enabled() bool { return c.base != "" }
+
+// ClaudeReady says whether pdf-worker has an ANTHROPIC_API_KEY (cached for a minute).
+func (c *Client) ClaudeReady(ctx context.Context) bool {
+	if c.base == "" {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if time.Since(c.claudeAt) < time.Minute {
+		return c.claude
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	var out struct {
+		Claude bool `json:"claude"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/healthz", "", nil, &out); err == nil {
+		c.claude = out.Claude
+	}
+	c.claudeAt = time.Now()
+	return c.claude
+}
 
 // Base and Token are used by the upload proxy in the HTTP layer.
 func (c *Client) Base() string  { return c.base }

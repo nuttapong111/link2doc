@@ -26,6 +26,11 @@ MAX_BYTES = int(os.environ.get("MAX_PDF_MB", "500")) * 1024 * 1024
 FILE_TTL_DAYS = int(os.environ.get("FILE_TTL_DAYS", "30"))
 MIN_TEXT_CHARS = 40  # a page with less extractable text than this is treated as scanned
 OCR_DPI = int(os.environ.get("OCR_DPI", "300"))
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-5-5")
+CLAUDE_EFFORT = os.environ.get("CLAUDE_EFFORT", "low")  # transcription needs little reasoning
+CLAUDE_DPI = int(os.environ.get("CLAUDE_DPI", "150"))
+_claude = None
 
 app = FastAPI(title="link2doc pdf-worker")
 
@@ -68,7 +73,7 @@ def _startup():
 
 @app.get("/healthz")
 def healthz():
-    return {"ok": True}
+    return {"ok": True, "claude": bool(ANTHROPIC_API_KEY)}
 
 
 def save_meta(file_id: str, name: str):
@@ -169,6 +174,8 @@ class ConvertReq(BaseModel):
     lang: str = "tha+eng"
     strip_headers: bool = True
     page_markers: bool = True
+    # tesseract: OCR scanned pages; claude: Claude reads scanned pages; claude_all: Claude reads every page
+    engine: str = "tesseract"
 
 
 def ocr_page(page: fitz.Page, lang: str) -> str:
@@ -184,6 +191,55 @@ def ocr_page(page: fitz.Page, lang: str) -> str:
     text = re.sub(r"(?<=[฀-๿]) (?=[฀-๿])", "", text)
     paras = [re.sub(r"\s*\n\s*", " ", p).strip() for p in re.split(r"\n\s*\n", text)]
     return "\n\n".join(p for p in paras if p)
+
+
+CLAUDE_PROMPT = """This image is one page of a PDF document (usually Thai and/or English).
+Transcribe the page into clean Markdown:
+- Keep the original language and wording exactly; do not translate, summarize, or correct the content.
+- Use # / ## / ### for headings, - or 1. for lists, and Markdown tables for tables (merge split cells sensibly).
+- Leave out running headers, footers, and page numbers.
+- For a chart, photo, or diagram, write one short line in the page's language describing it, in italics.
+- If the page is blank, reply with nothing.
+Reply with the Markdown only, without a code fence or any comment."""
+
+
+class ClaudeError(Exception):
+    pass
+
+
+def claude_page(page: fitz.Page) -> str:
+    global _claude
+    if not ANTHROPIC_API_KEY:
+        raise ClaudeError("ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY ใน pdf-worker")
+    import base64
+
+    import anthropic
+
+    if _claude is None:
+        _claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, max_retries=3)
+    # Keep the long side near 1568px, the size Claude reads at without downscaling.
+    zoom = min(CLAUDE_DPI / 72, 1568 / max(page.rect.width, page.rect.height))
+    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+    data = base64.standard_b64encode(pix.tobytes("png")).decode()
+    resp = _claude.beta.messages.create(
+        model=CLAUDE_MODEL,
+        max_tokens=16000,
+        betas=["server-side-fallback-2026-07-01"],
+        fallbacks="default",
+        thinking={"type": "adaptive"},
+        output_config={"effort": CLAUDE_EFFORT},
+        messages=[{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": data}},
+            {"type": "text", "text": CLAUDE_PROMPT},
+        ]}],
+    )
+    if resp.stop_reason == "refusal":
+        raise ClaudeError("Claude ปฏิเสธการอ่านหน้านี้")
+    text = "".join(b.text for b in resp.content if b.type == "text").strip()
+    text = re.sub(r"^```(?:markdown|md)?\s*\n|\n```\s*$", "", text)
+    if resp.stop_reason == "max_tokens":
+        text += "\n\n> หน้านี้ยาวเกินกำหนด เนื้อหาอาจไม่ครบ"
+    return text
 
 
 def strip_repeating_lines(pages_md: list[str]) -> list[str]:
@@ -216,8 +272,12 @@ def convert(file_id: str, req: ConvertReq):
     pages = [p for p in req.pages if 1 <= p <= doc.page_count]
     if not pages:
         raise HTTPException(400, "ไม่มีหน้าที่อยู่ในไฟล์")
+    use_claude = req.engine in ("claude", "claude_all")
     text_pages, scan_pages = [], []
     for p in pages:
+        if req.engine == "claude_all":
+            scan_pages.append(p)
+            continue
         (text_pages if len(doc[p - 1].get_text("text").strip()) >= MIN_TEXT_CHARS else scan_pages).append(p)
 
     by_page: dict[int, str] = {}
@@ -229,9 +289,17 @@ def convert(file_id: str, req: ConvertReq):
         # Fallback if metadata numbering differs between versions.
         if not set(by_page) & set(text_pages):
             by_page = {p: c["text"] for p, c in zip(text_pages, chunks)}
-    ocr_done = []
+    ocr_done, claude_done = [], []
     for p in scan_pages:
-        if req.ocr:
+        if use_claude:
+            try:
+                by_page[p] = claude_page(doc[p - 1])
+                claude_done.append(p)
+            except ClaudeError as e:
+                by_page[p] = f"> อ่านหน้านี้ไม่สำเร็จ ({e})"
+            except Exception as e:  # noqa: BLE001
+                by_page[p] = f"> อ่านหน้านี้ไม่สำเร็จ (Claude: {type(e).__name__})"
+        elif req.ocr:
             try:
                 by_page[p] = ocr_page(doc[p - 1], req.lang)
                 ocr_done.append(p)
@@ -251,7 +319,7 @@ def convert(file_id: str, req: ConvertReq):
         if not md:
             continue
         parts.append((f"[หน้า {p}]\n\n" if req.page_markers else "") + md)
-    return {"markdown": "\n\n".join(parts), "ocr_pages": ocr_done}
+    return {"markdown": "\n\n".join(parts), "ocr_pages": ocr_done, "claude_pages": claude_done}
 
 
 @app.delete("/files/{file_id}", dependencies=[Depends(auth)])

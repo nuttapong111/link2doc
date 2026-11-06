@@ -77,6 +77,7 @@ type JobOptions struct {
 	Schedule      *ScheduleSpec `json:"schedule,omitempty"`
 	OCR           bool          `json:"ocr"`
 	OCRLang       string        `json:"ocrLang"`
+	PDFEngine     string        `json:"pdfEngine,omitempty"` // tesseract | claude | claude_all
 	StripHeaders  bool          `json:"stripHeaders"`
 	PageMarkers   bool          `json:"pageMarkers"`
 }

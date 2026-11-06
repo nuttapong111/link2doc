@@ -23,7 +23,7 @@ internal/
     crypto/              AES-256-GCM สำหรับ token ที่เก็บในฐานข้อมูล
 pkg/textutil/            ฟังก์ชันช่วยที่ไม่มี dependency
 web/static/              หน้าเว็บ (ฝังเข้า binary ด้วย go:embed)
-pdf-worker/              Python: PDF → Markdown (PyMuPDF4LLM) + OCR ไทย-อังกฤษ (Tesseract)
+pdf-worker/              Python: PDF → Markdown (PyMuPDF4LLM) + OCR ไทย-อังกฤษ (Tesseract) หรืออ่านด้วย Claude
 ```
 
 ทิศทาง dependency: `delivery → usecase → domain ← repository / infrastructure` (ประกอบกันใน `cmd/link2doc`)
@@ -69,7 +69,14 @@ PDF_WORKER_TOKEN=<openssl rand -hex 24>
 PORT=8000
 PDF_WORKER_TOKEN=<ค่าเดียวกับด้านบน>
 DATA_DIR=/data
+ANTHROPIC_API_KEY=<ใส่เมื่อจะใช้ "อ่านด้วย Claude">
+# CLAUDE_MODEL=claude-opus-5-5   CLAUDE_EFFORT=low
 ```
+
+### อ่าน PDF ด้วย Claude
+หน้าแปลง PDF มีตัวเลือก "วิธีอ่าน": OCR ปกติ (Tesseract, ฟรี), Claude อ่านเฉพาะหน้าสแกน, หรือ Claude อ่านทุกหน้า (เหมาะกับตารางซับซ้อน ผู้ใช้ทั่วไปเลือกข้อนี้ไม่ได้)
+pdf-worker แปลงแต่ละหน้าเป็นภาพแล้วส่งให้ Claude ถอดเป็น Markdown คิดเงินตามหน้า ราว 2 ถึง 3 บาทต่อหน้าเมื่อใช้ Opus 5.5
+เปิด server-side fallback (`fallbacks: "default"`) ไว้ ถ้าโมเดลหลักปฏิเสธ API จะลองโมเดลสำรองให้เอง หน้าที่ยังอ่านไม่ได้จะขึ้นข้อความ "อ่านหน้านี้ไม่สำเร็จ"
 แอปเปิดได้แม้ยังไม่ใส่ค่า Google (ปุ่มเข้าสู่ระบบจะแจ้งว่ายังไม่ได้ตั้งค่า) ตารางสร้างอัตโนมัติตอนเริ่ม
 
 ### 4. ใช้งานครั้งแรก (โหมดสาธารณะ `PUBLIC_MODE=true`)

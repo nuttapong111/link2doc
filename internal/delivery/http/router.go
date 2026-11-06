@@ -2,6 +2,7 @@
 package http
 
 import (
+	"context"
 	"errors"
 	"io"
 	"io/fs"
@@ -30,6 +31,7 @@ type Handler struct {
 // PDFProxy is what the upload endpoint needs from the pdf-worker client.
 type PDFProxy interface {
 	Enabled() bool
+	ClaudeReady(ctx context.Context) bool
 	Base() string
 	Token() string
 }
@@ -263,7 +265,7 @@ func (h *Handler) me(c *gin.Context) {
 		return
 	}
 	c.JSON(200, gin.H{"user": me, "features": gin.H{
-		"pdf": h.pdf.Enabled(), "browser": false, "driveScope": h.cfg.DriveScopeMode,
+		"pdf": h.pdf.Enabled(), "claude": h.pdf.ClaudeReady(c.Request.Context()), "browser": false, "driveScope": h.cfg.DriveScopeMode,
 		"picker": h.cfg.GoogleAPIKey != "" && h.cfg.GoogleAppID != "" && !me.Guest, "maxLinks": maxLinks(h.cfg, me.Guest),
 		"public": h.cfg.PublicMode, "googleConfigured": h.cfg.GoogleConfigured(),
 	}})

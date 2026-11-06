@@ -42,6 +42,7 @@ type CreateJobInput struct {
 	Schedule      *domain.ScheduleSpec `json:"schedule"`
 	OCR           *bool                `json:"ocr"`
 	OCRLang       string               `json:"ocrLang"`
+	PDFEngine     string               `json:"pdfEngine"`
 	StripHeaders  *bool                `json:"stripHeaders"`
 	PageMarkers   *bool                `json:"pageMarkers"`
 }
@@ -126,6 +127,13 @@ func (s *JobService) Create(ctx context.Context, userID int, in CreateJobInput) 
 	if in.Format == "raw" {
 		format = "raw"
 	}
+	engine := in.PDFEngine
+	if engine != "claude" && engine != "claude_all" {
+		engine = "tesseract"
+	}
+	if guest && engine == "claude_all" {
+		engine = "claude" // reading every page with Claude is billed per page; guests get scanned pages only
+	}
 	lang := in.OCRLang
 	if lang == "" {
 		lang = "tha+eng"
@@ -142,7 +150,7 @@ func (s *JobService) Create(ctx context.Context, userID int, in CreateJobInput) 
 			MainOnly: orTrue(in.MainOnly), KeepLinks: orTrue(in.KeepLinks), KeepImages: in.KeepImages, Header: orTrue(in.Header),
 			Format: format, AutoPublish: in.AutoPublish, ToGoogle: orTrue(in.ToGoogle), ToDify: in.ToDify,
 			DifyDatasetID: in.DifyDatasetID, Chunk: in.Chunk, Schedule: in.Schedule,
-			OCR: orTrue(in.OCR), OCRLang: lang, StripHeaders: orTrue(in.StripHeaders), PageMarkers: orTrue(in.PageMarkers),
+			OCR: orTrue(in.OCR), OCRLang: lang, PDFEngine: engine, StripHeaders: orTrue(in.StripHeaders), PageMarkers: orTrue(in.PageMarkers),
 		},
 	}
 	var items []*domain.Item
