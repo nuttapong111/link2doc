@@ -27,7 +27,9 @@ FILE_TTL_DAYS = int(os.environ.get("FILE_TTL_DAYS", "30"))
 MIN_TEXT_CHARS = 40  # a page with less extractable text than this is treated as scanned
 OCR_DPI = int(os.environ.get("OCR_DPI", "300"))
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-5-5")
+# PDF pages: Sonnet reads Thai scans well at half Opus's price. Web cleanup is plain text work: Haiku is enough.
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5-5")
+CLAUDE_CLEAN_MODEL = os.environ.get("CLAUDE_CLEAN_MODEL", "claude-haiku-5-5")
 CLAUDE_EFFORT = os.environ.get("CLAUDE_EFFORT", "low")  # transcription needs little reasoning
 CLAUDE_DPI = int(os.environ.get("CLAUDE_DPI", "150"))
 _claude = None
@@ -218,6 +220,14 @@ def claude_client():
     return _claude
 
 
+def model_args(model: str) -> dict:
+    """Request options for a model. Haiku has no server-side fallback, so it is only added elsewhere."""
+    args = {"model": model, "thinking": {"type": "adaptive"}, "output_config": {"effort": CLAUDE_EFFORT}}
+    if "haiku" not in model:
+        args.update(betas=["server-side-fallback-2026-07-01"], fallbacks="default")
+    return args
+
+
 def claude_page(page: fitz.Page) -> str:
     import base64
 
@@ -227,12 +237,8 @@ def claude_page(page: fitz.Page) -> str:
     pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
     data = base64.standard_b64encode(pix.tobytes("png")).decode()
     resp = client.beta.messages.create(
-        model=CLAUDE_MODEL,
+        **model_args(CLAUDE_MODEL),
         max_tokens=16000,
-        betas=["server-side-fallback-2026-07-01"],
-        fallbacks="default",
-        thinking={"type": "adaptive"},
-        output_config={"effort": CLAUDE_EFFORT},
         messages=[{"role": "user", "content": [
             {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": data}},
             {"type": "text", "text": CLAUDE_PROMPT},
@@ -277,12 +283,8 @@ def clean(req: CleanReq):
     page = f"URL: {req.url}\nTitle: {req.title}\n\n<page>\n{md}\n</page>"
     try:
         with client.beta.messages.stream(
-            model=CLAUDE_MODEL,
+            **model_args(CLAUDE_CLEAN_MODEL),
             max_tokens=32000,
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-            thinking={"type": "adaptive"},
-            output_config={"effort": CLAUDE_EFFORT},
             system=CLEAN_SYSTEM,
             messages=[{"role": "user", "content": page}],
         ) as stream:

@@ -254,7 +254,7 @@ views.new = () => {
         <div class="row"><span class="chip ok" id="cnt">พบ 0 ลิงก์</span><span class="chip" id="dup">ซ้ำ 0</span><span class="chip" id="bad">รูปแบบไม่ถูกต้อง 0</span></div>
         <fieldset><legend>เนื้อหา</legend>
           <label class="check"><input type="checkbox" id="mainOnly" checked>เอาเฉพาะเนื้อหาหลัก (ตัดเมนู โฆษณา footer)</label>
-          ${FEAT.claude ? '<label class="check"><input type="checkbox" id="aiClean" checked>ให้ Claude คัดเฉพาะเนื้อหาจริง (ราว 1 ถึง 3 บาทต่อลิงก์)</label>' : ''}
+          ${FEAT.claude ? '<label class="check"><input type="checkbox" id="aiClean" checked>ให้ Claude คัดเฉพาะเนื้อหาจริง (ราว 10 สตางค์ต่อลิงก์)</label>' : ''}
           <label class="check"><input type="checkbox" id="keepLinks" checked>เก็บลิงก์</label>
           <label class="check"><input type="checkbox" id="header" checked>ใส่หัวเรื่อง: ชื่อหน้า, URL, วันที่ดึง</label>
           <label class="check"><input type="checkbox" id="keepImages">เก็บรูปภาพ (ลิงก์รูปต้นทาง)</label>
@@ -312,7 +312,7 @@ views.pdf = () => {
             <option value="claude" ${FEAT.claude ? '' : 'disabled'}>Claude อ่านเฉพาะหน้าสแกน (แม่นกว่า)</option>
             ${ME?.guest ? '' : `<option value="claude_all" ${FEAT.claude ? '' : 'disabled'}>Claude อ่านทุกหน้า (ตารางซับซ้อน)</option>`}
           </select></label>
-          <p class="small muted" id="engineNote">${FEAT.claude ? 'Claude คิดค่าใช้จ่ายราว 2 ถึง 3 บาทต่อหน้า' : 'ตัวเลือก Claude ใช้ได้เมื่อใส่ ANTHROPIC_API_KEY ให้ pdf-worker'}</p>
+          <p class="small muted" id="engineNote">${FEAT.claude ? 'Claude คิดค่าใช้จ่ายราว 1 บาทต่อหน้า' : 'ตัวเลือก Claude ใช้ได้เมื่อใส่ ANTHROPIC_API_KEY ให้ pdf-worker'}</p>
           <label class="check"><input type="checkbox" id="ocr" checked>ตรวจหน้าสแกนอัตโนมัติ แล้ว OCR เฉพาะหน้านั้น</label>
           <label class="field">ภาษา OCR<select id="ocrLang"><option value="tha+eng">ไทย + อังกฤษ</option><option value="tha">ไทย</option><option value="eng">อังกฤษ</option></select></label>
           <label class="check"><input type="checkbox" id="stripHeaders" checked>ตัดหัวกระดาษ ท้ายกระดาษ เลขหน้า</label>
