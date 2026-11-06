@@ -184,9 +184,10 @@ type PDFConvertRequest struct {
 }
 
 type PDFConvertResult struct {
-	Markdown    string `json:"markdown"`
-	OCRPages    []int  `json:"ocr_pages"`
-	ClaudePages []int  `json:"claude_pages"`
+	Markdown     string `json:"markdown"`
+	OCRPages     []int  `json:"ocr_pages"`
+	ClaudePages  []int  `json:"claude_pages"`
+	ClaudeFailed []int  `json:"claude_failed"`
 }
 
 type CleanResult struct {

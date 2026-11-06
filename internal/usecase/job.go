@@ -128,13 +128,9 @@ func (s *JobService) Create(ctx context.Context, userID int, in CreateJobInput) 
 	if in.Format == "raw" {
 		format = "raw"
 	}
-	engine := in.PDFEngine
-	if engine != "claude" && engine != "claude_all" {
-		engine = "tesseract"
-	}
-	if guest && engine == "claude_all" {
-		engine = "claude" // reading every page with Claude is billed per page; guests get scanned pages only
-	}
+	// Claude reads every PDF page and cleans every web page. Without ANTHROPIC_API_KEY the
+	// fetch step falls back to the plain text layer and Tesseract OCR.
+	engine := "claude_all"
 	lang := in.OCRLang
 	if lang == "" {
 		lang = "tha+eng"
@@ -148,7 +144,7 @@ func (s *JobService) Create(ctx context.Context, userID int, in CreateJobInput) 
 		UserID: userID, Source: source, DocTitle: cut(title, 200), Target: target, Layout: layout,
 		DocID: docID, FolderID: folderID, Status: domain.JobFetching,
 		Options: domain.JobOptions{
-			MainOnly: orTrue(in.MainOnly), AIClean: orTrue(in.AIClean), KeepLinks: orTrue(in.KeepLinks), KeepImages: in.KeepImages, Header: orTrue(in.Header),
+			MainOnly: orTrue(in.MainOnly), AIClean: true, KeepLinks: orTrue(in.KeepLinks), KeepImages: in.KeepImages, Header: orTrue(in.Header),
 			Format: format, AutoPublish: in.AutoPublish, ToGoogle: orTrue(in.ToGoogle), ToDify: in.ToDify,
 			DifyDatasetID: in.DifyDatasetID, Chunk: in.Chunk, Schedule: in.Schedule,
 			OCR: orTrue(in.OCR), OCRLang: lang, PDFEngine: engine, StripHeaders: orTrue(in.StripHeaders), PageMarkers: orTrue(in.PageMarkers),

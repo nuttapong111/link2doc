@@ -350,16 +350,25 @@ def convert(file_id: str, req: ConvertReq):
         # Fallback if metadata numbering differs between versions.
         if not set(by_page) & set(text_pages):
             by_page = {p: c["text"] for p, c in zip(text_pages, chunks)}
-    ocr_done, claude_done = [], []
+    ocr_done, claude_done, claude_failed = [], [], []
     for p in scan_pages:
         if use_claude:
             try:
                 by_page[p] = claude_page(doc[p - 1])
                 claude_done.append(p)
-            except ClaudeError as e:
-                by_page[p] = f"> อ่านหน้านี้ไม่สำเร็จ ({e})"
             except Exception as e:  # noqa: BLE001
-                by_page[p] = f"> อ่านหน้านี้ไม่สำเร็จ (Claude: {type(e).__name__})"
+                # Claude could not read the page: fall back to the page's own text, then to OCR.
+                reason = str(e) if isinstance(e, ClaudeError) else f"Claude: {type(e).__name__}"
+                claude_failed.append(p)
+                page = doc[p - 1]
+                try:
+                    if len(page.get_text("text").strip()) >= MIN_TEXT_CHARS:
+                        by_page[p] = pymupdf4llm.to_markdown(doc, pages=[p - 1], show_progress=False)
+                    else:
+                        by_page[p] = ocr_page(page, req.lang)
+                        ocr_done.append(p)
+                except Exception:  # noqa: BLE001
+                    by_page[p] = f"> อ่านหน้านี้ไม่สำเร็จ ({reason})"
         elif req.ocr:
             try:
                 by_page[p] = ocr_page(doc[p - 1], req.lang)
@@ -380,7 +389,7 @@ def convert(file_id: str, req: ConvertReq):
         if not md:
             continue
         parts.append((f"[หน้า {p}]\n\n" if req.page_markers else "") + md)
-    return {"markdown": "\n\n".join(parts), "ocr_pages": ocr_done, "claude_pages": claude_done}
+    return {"markdown": "\n\n".join(parts), "ocr_pages": ocr_done, "claude_pages": claude_done, "claude_failed": claude_failed}
 
 
 @app.delete("/files/{file_id}", dependencies=[Depends(auth)])

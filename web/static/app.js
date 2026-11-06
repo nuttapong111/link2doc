@@ -254,7 +254,6 @@ views.new = () => {
         <div class="row"><span class="chip ok" id="cnt">พบ 0 ลิงก์</span><span class="chip" id="dup">ซ้ำ 0</span><span class="chip" id="bad">รูปแบบไม่ถูกต้อง 0</span></div>
         <fieldset><legend>เนื้อหา</legend>
           <label class="check"><input type="checkbox" id="mainOnly" checked>เอาเฉพาะเนื้อหาหลัก (ตัดเมนู โฆษณา footer)</label>
-          ${FEAT.claude ? '<label class="check"><input type="checkbox" id="aiClean" checked>ให้ Claude คัดเฉพาะเนื้อหาจริง (ราว 10 สตางค์ต่อลิงก์)</label>' : ''}
           <label class="check"><input type="checkbox" id="keepLinks" checked>เก็บลิงก์</label>
           <label class="check"><input type="checkbox" id="header" checked>ใส่หัวเรื่อง: ชื่อหน้า, URL, วันที่ดึง</label>
           <label class="check"><input type="checkbox" id="keepImages">เก็บรูปภาพ (ลิงก์รูปต้นทาง)</label>
@@ -283,7 +282,7 @@ views.new = () => {
     try {
       const r = await api('/api/jobs', { method: 'POST', body: {
         source: 'url', urls, ...d, autoPublish, schedule: readSchedule(),
-        mainOnly: $('#mainOnly').checked, aiClean: $('#aiClean') ? $('#aiClean').checked : false, keepLinks: $('#keepLinks').checked, header: $('#header').checked, keepImages: $('#keepImages').checked
+        mainOnly: $('#mainOnly').checked, keepLinks: $('#keepLinks').checked, header: $('#header').checked, keepImages: $('#keepImages').checked
       } });
       location.hash = `#/job/${r.id}`;
     } catch (e) { fail(e); }
@@ -295,7 +294,7 @@ views.new = () => {
 views.pdf = () => {
   if (!FEAT.pdf) { app.innerHTML = `${sourceSwitch('pdf')}<div class="alert warn">ยังไม่ได้เปิดบริการแปลง PDF (ตั้งค่า PDF_WORKER_URL ใน Railway)</div>`; return; }
   const files = [];
-  app.innerHTML = `<div class="row between"><div><h1>แปลง PDF เป็น Markdown</h1><p class="muted">อ่านได้ทั้ง PDF ที่มีข้อความและภาพสแกน (OCR ไทย-อังกฤษ) แล้วส่งเข้า Dify Knowledge หรือ Google Doc</p></div>${sourceSwitch('pdf')}</div>
+  app.innerHTML = `<div class="row between"><div><h1>แปลง PDF เป็น Markdown</h1><p class="muted">ให้ Claude อ่าน PDF ทั้งไฟล์ข้อความและไฟล์สแกน แล้วส่งเข้า Dify Knowledge หรือ Google Doc</p></div>${sourceSwitch('pdf')}</div>
     <div class="cols">
       <section class="grow" style="display:flex;flex-direction:column;gap:16px;min-width:0">
         <div class="card"><h2>ไฟล์</h2>
@@ -307,14 +306,7 @@ views.pdf = () => {
       </section>
       <div class="side" style="display:flex;flex-direction:column;gap:16px">
         <div class="card"><h2>การอ่าน PDF</h2>
-          <label class="field">วิธีอ่าน<select id="pdfEngine">
-            <option value="tesseract">OCR ปกติ (ฟรี) อ่านหน้าสแกนด้วย Tesseract</option>
-            <option value="claude" ${FEAT.claude ? '' : 'disabled'}>Claude อ่านเฉพาะหน้าสแกน (แม่นกว่า)</option>
-            ${ME?.guest ? '' : `<option value="claude_all" ${FEAT.claude ? '' : 'disabled'}>Claude อ่านทุกหน้า (ตารางซับซ้อน)</option>`}
-          </select></label>
-          <p class="small muted" id="engineNote">${FEAT.claude ? 'Claude คิดค่าใช้จ่ายราว 10 สตางค์ต่อหน้า' : 'ตัวเลือก Claude ใช้ได้เมื่อใส่ ANTHROPIC_API_KEY ให้ pdf-worker'}</p>
-          <label class="check"><input type="checkbox" id="ocr" checked>ตรวจหน้าสแกนอัตโนมัติ แล้ว OCR เฉพาะหน้านั้น</label>
-          <label class="field">ภาษา OCR<select id="ocrLang"><option value="tha+eng">ไทย + อังกฤษ</option><option value="tha">ไทย</option><option value="eng">อังกฤษ</option></select></label>
+          <p class="small muted">${FEAT.claude ? 'Claude อ่านทุกหน้า ทั้งข้อความ ตาราง และภาพสแกน' : 'ยังไม่ได้ใส่ ANTHROPIC_API_KEY ระบบจะอ่านด้วยวิธีปกติไปก่อน'}</p>
           <label class="check"><input type="checkbox" id="stripHeaders" checked>ตัดหัวกระดาษ ท้ายกระดาษ เลขหน้า</label>
           <label class="check"><input type="checkbox" id="pageMarkers" checked>ใส่เลขหน้าต้นฉบับกำกับ [หน้า N]</label>
         </div>
@@ -324,8 +316,6 @@ views.pdf = () => {
     <div class="row end"><span class="muted small" style="margin-right:auto" id="psum">ยังไม่มีไฟล์</span>
       <button class="btn" id="review">ตรวจ Markdown ก่อน</button><button class="btn primary" id="send">แปลงและส่ง</button></div>`;
   bindDest();
-  const syncEngine = () => { const t = $('#pdfEngine').value === 'tesseract'; $('#ocr').closest('label').hidden = !t; $('#ocrLang').closest('label').hidden = !t; };
-  $('#pdfEngine').onchange = syncEngine; syncEngine();
   const tbody = $('#flist tbody');
   const render = () => {
     $('#flist').hidden = !files.length;
@@ -366,7 +356,7 @@ views.pdf = () => {
     try {
       const r = await api('/api/jobs', { method: 'POST', body: {
         source: 'pdf', files: ready.map(f => ({ fileId: f.fileId, url: f.url, name: f.name, pages: f.pages_range })), ...d, autoPublish,
-        ocr: $('#ocr').checked, ocrLang: $('#ocrLang').value, pdfEngine: $('#pdfEngine').value, stripHeaders: $('#stripHeaders').checked, pageMarkers: $('#pageMarkers').checked
+        stripHeaders: $('#stripHeaders').checked, pageMarkers: $('#pageMarkers').checked
       } });
       location.hash = `#/job/${r.id}`;
     } catch (e) { fail(e); }

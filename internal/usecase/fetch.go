@@ -165,12 +165,16 @@ func (s *FetchService) convertPDF(ctx context.Context, it *domain.Item, job *dom
 	if lang == "" {
 		lang = "tha+eng"
 	}
+	engine := job.Options.PDFEngine
+	if engine != "tesseract" && !s.PDF.ClaudeReady(ctx) {
+		engine = "tesseract"
+	}
 	var parts []string
-	ocrPages, claudePages := 0, 0
+	ocrPages, claudePages, claudeFailed := 0, 0, 0
 	for i := 0; i < len(pages); i += pdfBatch {
 		r, err := s.PDF.Convert(ctx, fileID, domain.PDFConvertRequest{
 			Pages: pages[i:min(i+pdfBatch, len(pages))], OCR: job.Options.OCR, Lang: lang,
-			StripHeaders: job.Options.StripHeaders, PageMarkers: job.Options.PageMarkers, Engine: job.Options.PDFEngine,
+			StripHeaders: job.Options.StripHeaders, PageMarkers: job.Options.PageMarkers, Engine: engine,
 		})
 		if err != nil {
 			return nil, err
@@ -178,6 +182,7 @@ func (s *FetchService) convertPDF(ctx context.Context, it *domain.Item, job *dom
 		parts = append(parts, r.Markdown)
 		ocrPages += len(r.OCRPages)
 		claudePages += len(r.ClaudePages)
+		claudeFailed += len(r.ClaudeFailed)
 		pct := int(math.Min(100, math.Round(float64(i+pdfBatch)/float64(len(pages))*100)))
 		_ = s.Items.Update(ctx, it.ID, map[string]any{"progress": pct})
 	}
@@ -189,8 +194,10 @@ func (s *FetchService) convertPDF(ctx context.Context, it *domain.Item, job *dom
 		via = "pdf+ocr"
 	}
 	if claudePages > 0 {
-		warnings = append(warnings, fmt.Sprintf("Claude อ่าน %d หน้า", claudePages))
 		via = "pdf+claude"
+	}
+	if claudeFailed > 0 {
+		warnings = append(warnings, fmt.Sprintf("Claude อ่านไม่สำเร็จ %d หน้า ใช้วิธีอ่านปกติแทน", claudeFailed))
 	}
 	if strings.Contains(md, "> อ่านหน้านี้ไม่สำเร็จ") {
 		warnings = append(warnings, "บางหน้าอ่านไม่สำเร็จ ดูข้อความ \"อ่านหน้านี้ไม่สำเร็จ\" ใน Markdown")
