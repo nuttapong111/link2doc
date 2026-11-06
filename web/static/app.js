@@ -254,6 +254,7 @@ views.new = () => {
         <div class="row"><span class="chip ok" id="cnt">พบ 0 ลิงก์</span><span class="chip" id="dup">ซ้ำ 0</span><span class="chip" id="bad">รูปแบบไม่ถูกต้อง 0</span></div>
         <fieldset><legend>เนื้อหา</legend>
           <label class="check"><input type="checkbox" id="mainOnly" checked>เอาเฉพาะเนื้อหาหลัก (ตัดเมนู โฆษณา footer)</label>
+          ${FEAT.claude ? '<label class="check"><input type="checkbox" id="aiClean" checked>ให้ Claude คัดเฉพาะเนื้อหาจริง (ราว 1 ถึง 3 บาทต่อลิงก์)</label>' : ''}
           <label class="check"><input type="checkbox" id="keepLinks" checked>เก็บลิงก์</label>
           <label class="check"><input type="checkbox" id="header" checked>ใส่หัวเรื่อง: ชื่อหน้า, URL, วันที่ดึง</label>
           <label class="check"><input type="checkbox" id="keepImages">เก็บรูปภาพ (ลิงก์รูปต้นทาง)</label>
@@ -282,7 +283,7 @@ views.new = () => {
     try {
       const r = await api('/api/jobs', { method: 'POST', body: {
         source: 'url', urls, ...d, autoPublish, schedule: readSchedule(),
-        mainOnly: $('#mainOnly').checked, keepLinks: $('#keepLinks').checked, header: $('#header').checked, keepImages: $('#keepImages').checked
+        mainOnly: $('#mainOnly').checked, aiClean: $('#aiClean') ? $('#aiClean').checked : false, keepLinks: $('#keepLinks').checked, header: $('#header').checked, keepImages: $('#keepImages').checked
       } });
       location.hash = `#/job/${r.id}`;
     } catch (e) { fail(e); }

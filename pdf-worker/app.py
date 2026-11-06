@@ -207,21 +207,26 @@ class ClaudeError(Exception):
     pass
 
 
-def claude_page(page: fitz.Page) -> str:
+def claude_client():
     global _claude
     if not ANTHROPIC_API_KEY:
         raise ClaudeError("ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY ใน pdf-worker")
-    import base64
-
     import anthropic
 
     if _claude is None:
         _claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, max_retries=3)
+    return _claude
+
+
+def claude_page(page: fitz.Page) -> str:
+    import base64
+
+    client = claude_client()
     # Keep the long side near 1568px, the size Claude reads at without downscaling.
     zoom = min(CLAUDE_DPI / 72, 1568 / max(page.rect.width, page.rect.height))
     pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
     data = base64.standard_b64encode(pix.tobytes("png")).decode()
-    resp = _claude.beta.messages.create(
+    resp = client.beta.messages.create(
         model=CLAUDE_MODEL,
         max_tokens=16000,
         betas=["server-side-fallback-2026-07-01"],
@@ -240,6 +245,60 @@ def claude_page(page: fitz.Page) -> str:
     if resp.stop_reason == "max_tokens":
         text += "\n\n> หน้านี้ยาวเกินกำหนด เนื้อหาอาจไม่ครบ"
     return text
+
+
+CLEAN_SYSTEM = """You receive a web page that was converted to Markdown automatically. It still contains the site's navigation menus, header, footer, breadcrumbs, sidebars, share buttons, cookie notices, and similar page furniture.
+Return only the page's real content as Markdown, for a knowledge base:
+- Copy the content's wording exactly. Do not translate, summarize, rephrase, or add anything that is not on the page.
+- Keep the content's headings, lists, tables, dates, contact details, and the links that belong to the content.
+- Remove menus, navigation links, language switchers, search boxes, login links, footers, "related" or "popular" link lists, social buttons, and repeated site-wide text.
+- If the page is a listing (news, activities, documents), keep the list of items with their titles, dates, and links, and drop pagination.
+- Start with the page's main heading as # if it has one.
+- If the page has no real content beyond furniture, reply with nothing.
+Reply with the Markdown only, without a code fence or any comment."""
+
+MAX_CLEAN_CHARS = int(os.environ.get("MAX_CLEAN_CHARS", "150000"))
+
+
+class CleanReq(BaseModel):
+    markdown: str
+    title: str = ""
+    url: str = ""
+
+
+@app.post("/clean", dependencies=[Depends(auth)])
+def clean(req: CleanReq):
+    """Let Claude keep only the real content of a converted web page."""
+    try:
+        client = claude_client()
+    except ClaudeError as e:
+        raise HTTPException(503, str(e)) from e
+    md = req.markdown[:MAX_CLEAN_CHARS]
+    page = f"URL: {req.url}\nTitle: {req.title}\n\n<page>\n{md}\n</page>"
+    try:
+        with client.beta.messages.stream(
+            model=CLAUDE_MODEL,
+            max_tokens=32000,
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+            thinking={"type": "adaptive"},
+            output_config={"effort": CLAUDE_EFFORT},
+            system=CLEAN_SYSTEM,
+            messages=[{"role": "user", "content": page}],
+        ) as stream:
+            resp = stream.get_final_message()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"เรียก Claude ไม่สำเร็จ ({type(e).__name__})") from e
+    if resp.stop_reason == "refusal":
+        raise HTTPException(422, "Claude ปฏิเสธการคัดเนื้อหาหน้านี้")
+    text = "".join(b.text for b in resp.content if b.type == "text").strip()
+    text = re.sub(r"^```(?:markdown|md)?\s*\n|\n```\s*$", "", text)
+    return {
+        "markdown": text,
+        "truncated": resp.stop_reason == "max_tokens" or len(req.markdown) > MAX_CLEAN_CHARS,
+        "input_tokens": resp.usage.input_tokens,
+        "output_tokens": resp.usage.output_tokens,
+    }
 
 
 def strip_repeating_lines(pages_md: list[str]) -> list[str]:

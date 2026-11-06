@@ -102,7 +102,7 @@ func (s *RefreshService) RefreshItem(ctx context.Context, itemID string, manual 
 		}
 	}
 
-	out, cerr := s.Fetch.Convert(ctx, it, job)
+	out, cerr := s.Fetch.Convert(WithKnownHash(ctx, domain.Str(it.ContentHash)), it, job)
 	if cerr != nil {
 		streak := sched.FailStreak + 1
 		record("failed", map[string]any{"fail_streak": streak})

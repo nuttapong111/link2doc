@@ -85,6 +85,12 @@ func (c *Client) do(ctx context.Context, method, path, ctype string, body io.Rea
 	return json.Unmarshal(raw, out)
 }
 
+func (c *Client) Clean(ctx context.Context, markdown, title, pageURL string) (*domain.CleanResult, error) {
+	b, _ := json.Marshal(map[string]string{"markdown": markdown, "title": title, "url": pageURL})
+	var out domain.CleanResult
+	return &out, c.do(ctx, http.MethodPost, "/clean", "application/json", bytes.NewReader(b), &out)
+}
+
 func (c *Client) Info(ctx context.Context, fileID string) (*domain.PDFInfo, error) {
 	var out domain.PDFInfo
 	return &out, c.do(ctx, http.MethodGet, "/files/"+fileID+"/info", "", nil, &out)

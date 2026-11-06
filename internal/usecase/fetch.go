@@ -79,7 +79,42 @@ func (s *FetchService) convertWeb(ctx context.Context, it *domain.Item, job *dom
 	if out.TextLength < 30 {
 		return nil, domain.NewError(422, "ไม่พบเนื้อหาในหน้านี้ (อาจต้องล็อกอิน หรือหน้าใช้ JavaScript)")
 	}
-	return &converted{Title: out.Title, Markdown: out.Markdown, Warnings: out.Warnings, FinalURL: res.FinalURL, Via: via}, nil
+	conv := &converted{Title: out.Title, Markdown: out.Markdown, Warnings: out.Warnings, FinalURL: res.FinalURL, Via: via,
+		BodyHash: textutil.SHA256(out.Markdown)}
+	if job.Options.AIClean {
+		s.aiClean(ctx, conv)
+	}
+	return conv, nil
+}
+
+// aiClean lets Claude drop menus, footers and other page furniture. The hash stays that of the
+// page before cleaning, so a scheduled refresh of an unchanged page does not call Claude again.
+func (s *FetchService) aiClean(ctx context.Context, c *converted) {
+	if !s.PDF.Enabled() || !s.PDF.ClaudeReady(ctx) {
+		return
+	}
+	if known, ok := ctx.Value(knownHashKey{}).(string); ok && known == c.BodyHash {
+		return // the refresh will report "unchanged" without using the Markdown
+	}
+	r, err := s.PDF.Clean(ctx, c.Markdown, c.Title, c.FinalURL)
+	switch {
+	case err != nil:
+		c.Warnings = append(c.Warnings, "Claude คัดเนื้อหาไม่สำเร็จ ใช้ผลแปลงปกติแทน: "+userMessage(err))
+	case strings.TrimSpace(r.Markdown) == "":
+		c.Warnings = append(c.Warnings, "Claude ไม่พบเนื้อหาหลักในหน้านี้ ใช้ผลแปลงปกติแทน")
+	default:
+		c.Markdown, c.Via = strings.TrimSpace(r.Markdown), c.Via+"+claude"
+		if r.Truncated {
+			c.Warnings = append(c.Warnings, "หน้านี้ยาวมาก Claude อาจคัดเนื้อหาไม่ครบ ควรตรวจท้ายหน้า")
+		}
+	}
+}
+
+type knownHashKey struct{}
+
+// WithKnownHash marks the content hash an item already has, so unchanged pages skip Claude.
+func WithKnownHash(ctx context.Context, hash string) context.Context {
+	return context.WithValue(ctx, knownHashKey{}, hash)
 }
 
 func (s *FetchService) convertPDF(ctx context.Context, it *domain.Item, job *domain.Job, body []byte) (*converted, error) {
@@ -186,8 +221,9 @@ func (s *FetchService) Convert(ctx context.Context, it *domain.Item, job *domain
 	if err != nil {
 		return nil, err
 	}
-	body := out.Markdown
-	out.BodyHash = textutil.SHA256(body)
+	if out.BodyHash == "" {
+		out.BodyHash = textutil.SHA256(out.Markdown)
+	}
 	if job.Options.Header {
 		acct, err := s.accountFor(ctx, job.UserID, false)
 		if err != nil {
@@ -202,7 +238,7 @@ func (s *FetchService) Convert(ctx context.Context, it *domain.Item, job *domain
 			src = domain.Str(it.FileName)
 		}
 		hdr := textutil.RenderHeader(domain.Str(st.HeaderTemplate), out.Title, src, time.Now().UTC().Format("2006-01-02 15:04"))
-		out.Markdown = hdr + "\n\n" + body
+		out.Markdown = hdr + "\n\n" + out.Markdown
 	}
 	return out, nil
 }

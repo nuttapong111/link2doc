@@ -189,6 +189,11 @@ type PDFConvertResult struct {
 	ClaudePages []int  `json:"claude_pages"`
 }
 
+type CleanResult struct {
+	Markdown  string `json:"markdown"`
+	Truncated bool   `json:"truncated"`
+}
+
 type PDFUploaded struct {
 	FileID string `json:"file_id"`
 	Name   string `json:"name"`
@@ -200,6 +205,10 @@ type PDFService interface {
 	Info(ctx context.Context, fileID string) (*PDFInfo, error)
 	Convert(ctx context.Context, fileID string, r PDFConvertRequest) (*PDFConvertResult, error)
 	Upload(ctx context.Context, data []byte, name string) (*PDFUploaded, error)
+	// ClaudeReady says whether the worker can call Claude (ANTHROPIC_API_KEY is set).
+	ClaudeReady(ctx context.Context) bool
+	// Clean asks Claude to keep only the real content of a converted web page.
+	Clean(ctx context.Context, markdown, title, pageURL string) (*CleanResult, error)
 }
 
 type GoogleIdentity struct {

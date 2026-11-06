@@ -65,6 +65,7 @@ type ScheduleSpec struct {
 
 type JobOptions struct {
 	MainOnly      bool          `json:"mainOnly"`
+	AIClean       bool          `json:"aiClean"` // Claude keeps only the real content of web pages
 	KeepLinks     bool          `json:"keepLinks"`
 	KeepImages    bool          `json:"keepImages"`
 	Header        bool          `json:"header"`

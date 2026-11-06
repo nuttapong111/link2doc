@@ -30,6 +30,7 @@ type CreateJobInput struct {
 	Folder        string               `json:"folder"`
 	Layout        string               `json:"layout"`
 	MainOnly      *bool                `json:"mainOnly"`
+	AIClean       *bool                `json:"aiClean"`
 	KeepLinks     *bool                `json:"keepLinks"`
 	KeepImages    bool                 `json:"keepImages"`
 	Header        *bool                `json:"header"`
@@ -147,7 +148,7 @@ func (s *JobService) Create(ctx context.Context, userID int, in CreateJobInput) 
 		UserID: userID, Source: source, DocTitle: cut(title, 200), Target: target, Layout: layout,
 		DocID: docID, FolderID: folderID, Status: domain.JobFetching,
 		Options: domain.JobOptions{
-			MainOnly: orTrue(in.MainOnly), KeepLinks: orTrue(in.KeepLinks), KeepImages: in.KeepImages, Header: orTrue(in.Header),
+			MainOnly: orTrue(in.MainOnly), AIClean: orTrue(in.AIClean), KeepLinks: orTrue(in.KeepLinks), KeepImages: in.KeepImages, Header: orTrue(in.Header),
 			Format: format, AutoPublish: in.AutoPublish, ToGoogle: orTrue(in.ToGoogle), ToDify: in.ToDify,
 			DifyDatasetID: in.DifyDatasetID, Chunk: in.Chunk, Schedule: in.Schedule,
 			OCR: orTrue(in.OCR), OCRLang: lang, PDFEngine: engine, StripHeaders: orTrue(in.StripHeaders), PageMarkers: orTrue(in.PageMarkers),
