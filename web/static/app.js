@@ -446,7 +446,7 @@ async function renderReview(id) {
       ${failed ? `<div class="alert err">${esc(it.error || 'ดึงไม่สำเร็จ')} · วางเนื้อหาเองในช่อง Markdown ได้ แล้วระบบจะใช้ข้อความนั้นแทน</div>` : ''}
       ${(it.warnings || []).length ? `<div class="alert warn" role="status"><b>ควรดู ${it.warnings.length} จุด:</b> ${it.warnings.map(esc).join(' · ')}</div>` : ''}
       <div class="split">
-        <div class="card" style="padding:0;overflow:hidden"><div class="row between small muted" style="padding:10px 16px;border-bottom:1px solid #EDF1EF"><label for="md">Markdown</label><span>${it.word_count ? num(it.word_count) + ' คำ' : ''}</span></div>
+        <div class="card" style="padding:0;overflow:hidden"><div class="row between small muted" style="padding:10px 16px;border-bottom:1px solid #EDF1EF"><label for="md">Markdown</label><span>${(it.fetched_via || '').includes('claude') ? '<span class="chip ok">อ่านโดย Claude</span> ' : it.fetched_via ? '<span class="chip">แปลงแบบปกติ</span> ' : ''}${it.word_count ? num(it.word_count) + ' คำ' : ''}</span></div>
           <textarea id="md" rows="24" class="code" style="border:0;border-radius:0;flex:1">${esc(it.markdown || '')}</textarea></div>
         <article class="card" style="padding:0;overflow:hidden" aria-label="พรีวิว"><div class="small muted" style="padding:10px 16px;border-bottom:1px solid #EDF1EF">พรีวิว</div><div class="preview" id="pv"></div></article>
       </div>`;
