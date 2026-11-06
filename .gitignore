@@ -1,0 +1,4 @@
+.env
+/link2doc
+__pycache__/
+*.pyc
