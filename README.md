@@ -70,7 +70,7 @@ PORT=8000
 PDF_WORKER_TOKEN=<ค่าเดียวกับด้านบน>
 DATA_DIR=/data
 ANTHROPIC_API_KEY=<ใส่เมื่อจะใช้ "อ่านด้วย Claude">
-# CLAUDE_MODEL=claude-sonnet-5-5 (อ่าน PDF)  CLAUDE_CLEAN_MODEL=claude-haiku-5-5 (คัดเนื้อหาเว็บ)  CLAUDE_EFFORT=low
+# CLAUDE_MODEL=claude-haiku-5-5 (อ่าน PDF)  CLAUDE_CLEAN_MODEL=claude-haiku-5-5 (คัดเนื้อหาเว็บ)  CLAUDE_EFFORT=low
 ```
 
 ### คัดเนื้อหาเว็บด้วย Claude
@@ -79,7 +79,7 @@ Claude คัดลอกถ้อยคำเดิมโดยไม่สร�
 
 ### อ่าน PDF ด้วย Claude
 หน้าแปลง PDF มีตัวเลือก "วิธีอ่าน": OCR ปกติ (Tesseract, ฟรี), Claude อ่านเฉพาะหน้าสแกน, หรือ Claude อ่านทุกหน้า (เหมาะกับตารางซับซ้อน ผู้ใช้ทั่วไปเลือกข้อนี้ไม่ได้)
-pdf-worker แปลงแต่ละหน้าเป็นภาพแล้วส่งให้ Claude ถอดเป็น Markdown คิดเงินตามหน้า ราว 1 บาทต่อหน้าเมื่อใช้ Sonnet 5.5 (ค่าเริ่มต้น)
+pdf-worker แปลงแต่ละหน้าเป็นภาพแล้วส่งให้ Claude ถอดเป็น Markdown คิดเงินตามหน้า ราว 10 สตางค์ต่อหน้าเมื่อใช้ Haiku 5.5 (ค่าเริ่มต้น ถ้าอ่านภาษาไทยจากภาพไม่แม่น เปลี่ยนเป็น Sonnet 5.5 ได้ ราว 1 บาทต่อหน้า)
 รุ่น Sonnet/Opus เปิด server-side fallback (`fallbacks: "default"`) ไว้ (Haiku ไม่มีระบบนี้) ถ้าโมเดลหลักปฏิเสธ API จะลองโมเดลสำรองให้เอง หน้าที่ยังอ่านไม่ได้จะขึ้นข้อความ "อ่านหน้านี้ไม่สำเร็จ"
 แอปเปิดได้แม้ยังไม่ใส่ค่า Google (ปุ่มเข้าสู่ระบบจะแจ้งว่ายังไม่ได้ตั้งค่า) ตารางสร้างอัตโนมัติตอนเริ่ม
 

@@ -27,8 +27,8 @@ FILE_TTL_DAYS = int(os.environ.get("FILE_TTL_DAYS", "30"))
 MIN_TEXT_CHARS = 40  # a page with less extractable text than this is treated as scanned
 OCR_DPI = int(os.environ.get("OCR_DPI", "300"))
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-# PDF pages: Sonnet reads Thai scans well at half Opus's price. Web cleanup is plain text work: Haiku is enough.
-CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5-5")
+# Haiku keeps the per-page cost low; set CLAUDE_MODEL=claude-sonnet-5-5 for harder Thai scans.
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-haiku-5-5")
 CLAUDE_CLEAN_MODEL = os.environ.get("CLAUDE_CLEAN_MODEL", "claude-haiku-5-5")
 CLAUDE_EFFORT = os.environ.get("CLAUDE_EFFORT", "low")  # transcription needs little reasoning
 CLAUDE_DPI = int(os.environ.get("CLAUDE_DPI", "150"))

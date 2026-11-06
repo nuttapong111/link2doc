@@ -312,7 +312,7 @@ views.pdf = () => {
             <option value="claude" ${FEAT.claude ? '' : 'disabled'}>Claude อ่านเฉพาะหน้าสแกน (แม่นกว่า)</option>
             ${ME?.guest ? '' : `<option value="claude_all" ${FEAT.claude ? '' : 'disabled'}>Claude อ่านทุกหน้า (ตารางซับซ้อน)</option>`}
           </select></label>
-          <p class="small muted" id="engineNote">${FEAT.claude ? 'Claude คิดค่าใช้จ่ายราว 1 บาทต่อหน้า' : 'ตัวเลือก Claude ใช้ได้เมื่อใส่ ANTHROPIC_API_KEY ให้ pdf-worker'}</p>
+          <p class="small muted" id="engineNote">${FEAT.claude ? 'Claude คิดค่าใช้จ่ายราว 10 สตางค์ต่อหน้า' : 'ตัวเลือก Claude ใช้ได้เมื่อใส่ ANTHROPIC_API_KEY ให้ pdf-worker'}</p>
           <label class="check"><input type="checkbox" id="ocr" checked>ตรวจหน้าสแกนอัตโนมัติ แล้ว OCR เฉพาะหน้านั้น</label>
           <label class="field">ภาษา OCR<select id="ocrLang"><option value="tha+eng">ไทย + อังกฤษ</option><option value="tha">ไทย</option><option value="eng">อังกฤษ</option></select></label>
           <label class="check"><input type="checkbox" id="stripHeaders" checked>ตัดหัวกระดาษ ท้ายกระดาษ เลขหน้า</label>
