@@ -53,7 +53,11 @@ func (s *FetchService) convertWeb(ctx context.Context, it *domain.Item, job *dom
 		return nil, domain.NewError(422, "ไม่รองรับไฟล์ชนิด "+strings.Split(res.ContentType, ";")[0])
 	}
 	fu, _ := url.Parse(res.FinalURL)
-	rule, err := s.Settings.RuleForHost(ctx, job.UserID, fu.Hostname())
+	acct, err := s.accountFor(ctx, job.UserID, false)
+	if err != nil {
+		return nil, err
+	}
+	rule, err := s.Settings.RuleForHost(ctx, acct, fu.Hostname())
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +181,11 @@ func (s *FetchService) Convert(ctx context.Context, it *domain.Item, job *domain
 	body := out.Markdown
 	out.BodyHash = textutil.SHA256(body)
 	if job.Options.Header {
-		st, err := s.Settings.Get(ctx, job.UserID)
+		acct, err := s.accountFor(ctx, job.UserID, false)
+		if err != nil {
+			return nil, err
+		}
+		st, err := s.Settings.Get(ctx, acct)
 		if err != nil {
 			return nil, err
 		}

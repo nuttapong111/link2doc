@@ -2,7 +2,9 @@ package usecase
 
 import (
 	"context"
+	"crypto/subtle"
 	"strings"
+	"time"
 
 	"github.com/nuttapong111/link2doc/internal/domain"
 )
@@ -13,6 +15,54 @@ type AuthService struct {
 	*Deps
 	AllowedDomains []string
 	AllowedEmails  []string
+	AdminUsername  string
+	AdminPassword  string
+}
+
+// PasswordLogin signs the administrator in with ADMIN_USERNAME / ADMIN_PASSWORD.
+func (s *AuthService) PasswordLogin(ctx context.Context, username, password string) (int, error) {
+	if s.AdminUsername == "" || s.AdminPassword == "" {
+		return 0, domain.NewError(503, "ยังไม่ได้ตั้งค่า ADMIN_USERNAME / ADMIN_PASSWORD")
+	}
+	okU := subtle.ConstantTimeCompare([]byte(username), []byte(s.AdminUsername)) == 1
+	okP := subtle.ConstantTimeCompare([]byte(password), []byte(s.AdminPassword)) == 1
+	if !okU || !okP {
+		time.Sleep(700 * time.Millisecond) // slow down guessing
+		return 0, domain.NewError(401, "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+	}
+	u, err := s.Users.UpsertAdmin(ctx, s.AdminUsername)
+	if err != nil {
+		return 0, err
+	}
+	return u.ID, nil
+}
+
+func (s *AuthService) checkDomain(id *domain.GoogleIdentity) error {
+	domainPart := id.Email[strings.LastIndex(id.Email, "@")+1:]
+	if len(s.AllowedDomains) > 0 && !contains(s.AllowedDomains, domainPart) && !contains(s.AllowedDomains, id.HostedDomain) {
+		return domain.NewError(403, "บัญชี "+id.Email+" ไม่อยู่ในโดเมนที่อนุญาต")
+	}
+	return nil
+}
+
+// LinkGoogle connects a Google account (the company Drive) to a signed-in user.
+func (s *AuthService) LinkGoogle(ctx context.Context, userID int, code string) error {
+	id, err := s.Auth.Exchange(ctx, code)
+	if err != nil {
+		return err
+	}
+	if err := s.checkDomain(id); err != nil {
+		return err
+	}
+	var tok *string
+	if id.RefreshToken != "" {
+		enc, err := s.Cipher.Encrypt(id.RefreshToken)
+		if err != nil {
+			return err
+		}
+		tok = &enc
+	}
+	return s.Users.SetGoogle(ctx, userID, id.Email, tok)
 }
 
 func contains(list []string, v string) bool {
@@ -30,9 +80,8 @@ func (s *AuthService) SignIn(ctx context.Context, code string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	domainPart := id.Email[strings.LastIndex(id.Email, "@")+1:]
-	if len(s.AllowedDomains) > 0 && !contains(s.AllowedDomains, domainPart) && !contains(s.AllowedDomains, id.HostedDomain) {
-		return 0, domain.NewError(403, "บัญชี "+id.Email+" ไม่อยู่ในโดเมนที่อนุญาต")
+	if err := s.checkDomain(id); err != nil {
+		return 0, err
 	}
 	if len(s.AllowedEmails) > 0 && !contains(s.AllowedEmails, id.Email) {
 		return 0, domain.NewError(403, "บัญชี "+id.Email+" ไม่ได้รับอนุญาต")
@@ -78,6 +127,20 @@ type Me struct {
 	Email  string  `json:"email"`
 	Name   *string `json:"name"`
 	Google bool    `json:"google"`
+	Guest  bool    `json:"guest"`
+	Admin  bool    `json:"admin"`
+	// GoogleEmail is the connected Google account (for the admin: the company Drive account).
+	GoogleEmail *string `json:"google_email"`
+	// Ready says whether published files have somewhere to go (guests need a connected owner).
+	Ready bool `json:"ready"`
+}
+
+func (s *AuthService) NewGuest(ctx context.Context) (int, error) {
+	u, err := s.Users.CreateGuest(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return u.ID, nil
 }
 
 func (s *AuthService) Me(ctx context.Context, userID int) (*Me, error) {
@@ -85,7 +148,13 @@ func (s *AuthService) Me(ctx context.Context, userID int) (*Me, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Me{ID: u.ID, Email: u.Email, Name: u.Name, Google: u.RefreshTokenEnc != nil}, nil
+	me := &Me{ID: u.ID, Email: u.Email, Name: u.Name, Google: u.RefreshTokenEnc != nil, Guest: u.IsGuest(), Admin: u.IsAdmin(),
+		GoogleEmail: u.GoogleEmail, Ready: u.RefreshTokenEnc != nil}
+	if me.Guest {
+		_, err := s.accountFor(ctx, userID, true)
+		me.Ready = err == nil
+	}
+	return me, nil
 }
 
 func (s *AuthService) PickerToken(ctx context.Context, userID int) (string, error) {
@@ -116,6 +185,22 @@ type SettingsView struct {
 }
 
 func (s *SettingsService) Get(ctx context.Context, userID int) (*SettingsView, error) {
+	if s.IsGuest(ctx, userID) {
+		// Guests only see what the "งานใหม่" form needs from the company settings.
+		acct, err := s.accountFor(ctx, userID, false)
+		if err != nil {
+			return nil, err
+		}
+		st, err := s.Settings.Get(ctx, acct)
+		if err != nil {
+			return nil, err
+		}
+		v := &SettingsView{DefaultFolderName: st.DefaultFolderName, Rules: []domain.SiteRule{}}
+		if d, err := s.Settings.GetDify(ctx, acct); err == nil && d != nil {
+			v.Dify = &domain.DifyConnection{DefaultDatasetID: d.DefaultDatasetID, IndexingTechnique: d.IndexingTechnique}
+		}
+		return v, nil
+	}
 	st, err := s.Settings.Get(ctx, userID)
 	if err != nil {
 		return nil, err

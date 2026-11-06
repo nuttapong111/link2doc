@@ -57,6 +57,7 @@ func main() {
 		Fetcher:   fetcher.New(cfg.UserAgent, cfg.AllowPrivate, time.Duration(cfg.PerDomainDelayMs)*time.Millisecond),
 		Converter: converter.New(), PDF: pdf, Auth: gauth, Docs: gauth, Dify: dify.Factory{}, Cipher: cipher,
 		Location: loc, MaxLinksPerJob: cfg.MaxLinksPerJob,
+		PublicMode: cfg.PublicMode, AdminEmails: cfg.AdminEmails, GuestMaxLinks: cfg.GuestMaxLinks, GuestJobsPerHr: cfg.GuestJobsPerHr,
 	}
 	sched := &usecase.ScheduleService{Deps: deps}
 	fetch := &usecase.FetchService{Deps: deps}
@@ -83,7 +84,8 @@ func main() {
 			static = os.DirFS(cfg.StaticDir) // edit the UI without rebuilding
 		}
 		router := httpd.NewRouter(cfg, httpd.Services{
-			Auth:     &usecase.AuthService{Deps: deps, AllowedDomains: cfg.AllowedDomains, AllowedEmails: cfg.AllowedEmails},
+			Auth: &usecase.AuthService{Deps: deps, AllowedDomains: cfg.AllowedDomains, AllowedEmails: cfg.AllowedEmails,
+				AdminUsername: cfg.AdminUsername, AdminPassword: cfg.AdminPassword},
 			Jobs:     &usecase.JobService{Deps: deps},
 			Schedule: sched,
 			Settings: &usecase.SettingsService{Deps: deps},

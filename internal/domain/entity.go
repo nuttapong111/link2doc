@@ -35,8 +35,15 @@ type User struct {
 	Email           string    `gorm:"not null" json:"email"`
 	Name            *string   `json:"name"`
 	RefreshTokenEnc *string   `json:"-"`
+	GoogleEmail     *string   `json:"google_email"`
 	CreatedAt       time.Time `json:"created_at"`
 }
+
+// IsGuest reports whether this is an anonymous visitor (public mode).
+func (u *User) IsGuest() bool { return len(u.GoogleSub) > 6 && u.GoogleSub[:6] == "guest:" }
+
+// IsAdmin reports whether this is the password-login administrator.
+func (u *User) IsAdmin() bool { return len(u.GoogleSub) > 6 && u.GoogleSub[:6] == "admin:" }
 
 // ChunkOptions controls how Dify splits a document.
 type ChunkOptions struct {

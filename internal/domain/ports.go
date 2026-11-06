@@ -12,6 +12,12 @@ type UserRepository interface {
 	UpsertDev(ctx context.Context) (*User, error)
 	Get(ctx context.Context, id int) (*User, error)
 	ClearToken(ctx context.Context, id int) error
+	CreateGuest(ctx context.Context) (*User, error)
+	UpsertAdmin(ctx context.Context, username string) (*User, error)
+	SetGoogle(ctx context.Context, id int, email string, refreshTokenEnc *string) error
+	// FindOwner returns the account whose Google token serves guests: the first user with a
+	// token whose email is in emails (any user with a token when emails is empty).
+	FindOwner(ctx context.Context, emails []string) (*User, error)
 }
 
 // JobSummary is one row of the history list.
@@ -41,6 +47,7 @@ type JobRepository interface {
 	// SetStatusIf changes the status only when it is currently one of from. Reports whether it changed.
 	SetStatusIf(ctx context.Context, id, to string, from ...string) (bool, error)
 	MergeOptions(ctx context.Context, id string, patch map[string]any) error
+	CountSince(ctx context.Context, userID int, since time.Time) (int64, error)
 }
 
 type ItemCounts struct {

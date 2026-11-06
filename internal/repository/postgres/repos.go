@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/nuttapong111/link2doc/internal/domain"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -37,6 +38,40 @@ func (r *UserRepo) UpsertDev(ctx context.Context) (*domain.User, error) {
 		return nil, err
 	}
 	return r.bySub(ctx, "dev")
+}
+
+func (r *UserRepo) CreateGuest(ctx context.Context) (*domain.User, error) {
+	u := domain.User{GoogleSub: "guest:" + uuid.NewString(), Email: "guest"}
+	return &u, withCtx(r.db, ctx).Create(&u).Error
+}
+
+func (r *UserRepo) UpsertAdmin(ctx context.Context, username string) (*domain.User, error) {
+	u := domain.User{GoogleSub: "admin:" + username, Email: username, Name: domain.Ptr("ผู้ดูแลระบบ")}
+	if err := withCtx(r.db, ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&u).Error; err != nil {
+		return nil, err
+	}
+	return r.bySub(ctx, "admin:"+username)
+}
+
+func (r *UserRepo) SetGoogle(ctx context.Context, id int, email string, tok *string) error {
+	f := map[string]any{"google_email": email}
+	if tok != nil {
+		f["refresh_token_enc"] = *tok
+	}
+	return withCtx(r.db, ctx).Model(&domain.User{}).Where("id = ?", id).Updates(f).Error
+}
+
+// FindOwner prefers the password admin's connected Google account, then any listed admin email.
+func (r *UserRepo) FindOwner(ctx context.Context, emails []string) (*domain.User, error) {
+	var u domain.User
+	q := withCtx(r.db, ctx).Where("refresh_token_enc IS NOT NULL AND google_sub NOT LIKE 'guest:%'")
+	if len(emails) > 0 {
+		q = q.Where("google_sub LIKE 'admin:%' OR lower(email) IN ?", emails)
+	}
+	if err := q.Order("(google_sub LIKE 'admin:%') DESC, id").First(&u).Error; err != nil {
+		return nil, notFound(err)
+	}
+	return &u, nil
 }
 
 func (r *UserRepo) bySub(ctx context.Context, sub string) (*domain.User, error) {
@@ -117,6 +152,12 @@ func (r *JobRepo) SetStatusIf(ctx context.Context, id, to string, from ...string
 func (r *JobRepo) MergeOptions(ctx context.Context, id string, patch map[string]any) error {
 	b, _ := json.Marshal(patch)
 	return withCtx(r.db, ctx).Exec(`UPDATE jobs SET options = options || ?::jsonb WHERE id = ?`, string(b), id).Error
+}
+
+func (r *JobRepo) CountSince(ctx context.Context, userID int, since time.Time) (int64, error) {
+	var n int64
+	err := withCtx(r.db, ctx).Model(&domain.Job{}).Where("user_id = ? AND created_at > ?", userID, since).Count(&n).Error
+	return n, err
 }
 
 // ---------- items ----------

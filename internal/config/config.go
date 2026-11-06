@@ -37,6 +37,13 @@ type Config struct {
 	AllowPrivate     bool
 	DevLogin         bool
 	StaticDir        string
+
+	PublicMode     bool     // anyone can use the converter without signing in
+	AdminEmails    []string // accounts whose Google Drive / Dify / settings serve guests
+	GuestMaxLinks  int
+	GuestJobsPerHr int
+	AdminUsername  string
+	AdminPassword  string
 }
 
 func env(k, def string) string {
@@ -91,6 +98,12 @@ func Load() (*Config, error) {
 		UserAgent:          env("FETCH_USER_AGENT", "Link2DocBot/0.2 (+markdown converter)"),
 		AllowPrivate:       env("ALLOW_PRIVATE_FETCH", "") == "true",
 		StaticDir:          env("STATIC_DIR", ""),
+		PublicMode:         env("PUBLIC_MODE", "") == "true",
+		AdminEmails:        list("ADMIN_EMAILS"),
+		GuestMaxLinks:      envInt("GUEST_MAX_LINKS", 20),
+		GuestJobsPerHr:     envInt("GUEST_JOBS_PER_HOUR", 20),
+		AdminUsername:      env("ADMIN_USERNAME", ""),
+		AdminPassword:      env("ADMIN_PASSWORD", ""),
 	}
 	c.DevLogin = env("DEV_LOGIN", "") == "true" && !strings.HasPrefix(c.AppURL, "https")
 	for k, v := range map[string]string{"DATABASE_URL": c.DatabaseURL, "SESSION_SECRET": c.SessionSecret, "ENCRYPTION_KEY": c.EncryptionKey} {

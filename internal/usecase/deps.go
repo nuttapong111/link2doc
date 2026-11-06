@@ -28,10 +28,49 @@ type Deps struct {
 
 	Location       *time.Location
 	MaxLinksPerJob int
+
+	// Public mode: guests use the company (owner) account's Google Drive, Dify and settings.
+	PublicMode     bool
+	AdminEmails    []string
+	GuestMaxLinks  int
+	GuestJobsPerHr int
+}
+
+// IsGuest reports whether the user is an anonymous visitor.
+func (d *Deps) IsGuest(ctx context.Context, userID int) bool {
+	u, err := d.Users.Get(ctx, userID)
+	return err == nil && u.IsGuest()
+}
+
+// accountFor returns whose Google/Dify/settings serve this user: the user themself, or the
+// owner account for guests. strict=false falls back to the guest when no owner is connected.
+func (d *Deps) accountFor(ctx context.Context, userID int, strict bool) (int, error) {
+	u, err := d.Users.Get(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	if !u.IsGuest() {
+		return userID, nil
+	}
+	owner, err := d.Users.FindOwner(ctx, d.AdminEmails)
+	if err == domain.ErrNotFound {
+		if strict {
+			return 0, domain.NewError(503, "ผู้ดูแลระบบยังไม่ได้เชื่อม Google Drive ของบริษัท กรุณาติดต่อผู้ดูแล")
+		}
+		return userID, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return owner.ID, nil
 }
 
 // googleFor opens a Docs/Drive session for the user.
 func (d *Deps) googleFor(ctx context.Context, userID int) (domain.GoogleDocs, error) {
+	userID, err := d.accountFor(ctx, userID, true)
+	if err != nil {
+		return nil, err
+	}
 	u, err := d.Users.Get(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -52,6 +91,10 @@ type difyConn struct {
 }
 
 func (d *Deps) difyFor(ctx context.Context, userID int) (*difyConn, error) {
+	userID, err := d.accountFor(ctx, userID, false)
+	if err != nil {
+		return nil, err
+	}
 	c, err := d.Settings.GetDify(ctx, userID)
 	if err != nil || c == nil {
 		return nil, err

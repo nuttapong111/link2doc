@@ -85,8 +85,22 @@ func (s *JobService) Create(ctx context.Context, userID int, in CreateJobInput) 
 	if n == 0 {
 		return "", domain.NewError(400, "ไม่พบลิงก์หรือไฟล์ที่ใช้ได้")
 	}
-	if n > s.MaxLinksPerJob {
-		return "", domain.NewError(400, fmt.Sprintf("ใส่ได้ไม่เกิน %d รายการต่องาน", s.MaxLinksPerJob))
+	limit := s.MaxLinksPerJob
+	guest := s.IsGuest(ctx, userID)
+	if guest {
+		// Guests always write a new Doc into the company's default folder.
+		in.Target, in.DocID, in.Folder = "new", "", ""
+		limit = min(limit, s.GuestMaxLinks)
+		recent, err := s.Jobs.CountSince(ctx, userID, time.Now().Add(-time.Hour))
+		if err != nil {
+			return "", err
+		}
+		if recent >= int64(s.GuestJobsPerHr) {
+			return "", domain.NewError(429, "ส่งงานถี่เกินไป กรุณารอสักครู่แล้วลองใหม่")
+		}
+	}
+	if n > limit {
+		return "", domain.NewError(400, fmt.Sprintf("ใส่ได้ไม่เกิน %d รายการต่องาน", limit))
 	}
 	layout := in.Layout
 	if layout != "h1" && layout != "doc" {

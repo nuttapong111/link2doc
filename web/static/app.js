@@ -186,6 +186,12 @@ function bindDest() {
   $('#toGoogle').onchange = sync;
   $('#toDify').onchange = () => { sync(); if ($('#toDify').checked) difyOptions($('#dataset')); };
   if ($('#toDify').checked) difyOptions($('#dataset'));
+  if (ME.guest) {
+    // Customers always get a new Doc in the company folder; they cannot pick another Doc or folder.
+    $('input[name=target][value=existing]').closest('label').hidden = true;
+    $('#existingRow').hidden = true; $('label[for=folder]').hidden = true; $('#folder').closest('.row').hidden = true;
+    $('#folderNote').textContent = 'ไฟล์จะถูกบันทึกในโฟลเดอร์ Google Drive ของบริษัท';
+  }
   $$('input[name=target]').forEach(r => r.onchange = () => { $('#existingRow').hidden = $('input[name=target]:checked').value !== 'existing'; });
   for (const id of ['layout', 'chunkMode']) {
     $('#' + id).addEventListener('click', (e) => {
@@ -223,8 +229,18 @@ const views = {};
 
 views.login = () => {
   $('#topbar').hidden = true;
-  app.innerHTML = `<section class="card login"><h1>Link2Doc</h1><p class="muted">แปลงหน้าเว็บและ PDF เป็น Markdown แล้วส่งเข้า Google Doc หรือ Dify</p>
-    <a class="btn primary" href="/auth/google">เข้าสู่ระบบด้วย Google</a></section>`;
+  app.innerHTML = `<section class="card login"><h1>Link2Doc</h1><p class="muted">${FEAT.public ? 'เข้าสู่ระบบผู้ดูแล' : 'แปลงหน้าเว็บและ PDF เป็น Markdown แล้วส่งเข้า Google Doc หรือ Dify'}</p>
+    <form id="lf" style="display:flex;flex-direction:column;gap:10px;text-align:left">
+      <label class="field">ชื่อผู้ใช้<input id="lu" type="text" autocomplete="username" required></label>
+      <label class="field">รหัสผ่าน<input id="lp" type="password" autocomplete="current-password" required></label>
+      <p class="small" id="lerr" style="color:#B42318" role="alert"></p>
+      <button class="btn primary" type="submit">เข้าสู่ระบบ</button></form>
+    ${FEAT.public ? '<a class="btn ghost" href="#/new">กลับไปหน้าแปลงไฟล์</a>' : '<a class="btn" href="/auth/google">เข้าสู่ระบบด้วย Google</a>'}</section>`;
+  $('#lf').onsubmit = async (e) => {
+    e.preventDefault(); $('#lerr').textContent = '';
+    try { await api('/auth/login', { method: 'POST', body: { username: $('#lu').value, password: $('#lp').value } }); location.hash = '#/settings'; location.reload(); }
+    catch (err) { $('#lerr').textContent = err.message; }
+  };
 };
 
 views.new = () => {
@@ -554,8 +570,10 @@ views.settings = async () => {
   let s; try { s = await api('/api/settings'); } catch (e) { return fail(e); }
   app.onclick = null;
   app.innerHTML = `<h1>ตั้งค่า</h1>
-    <section class="card"><div class="row between"><div><h2>บัญชี Google</h2><p class="small muted">${esc(ME.email)} · สิทธิ์ Drive: ${FEAT.driveScope === 'full' ? 'ทั้ง Drive (วางลิงก์โฟลเดอร์ได้)' : 'เฉพาะไฟล์ที่แอปสร้างหรือที่คุณเลือก'}</p></div>
-      <span class="chip ${ME.google ? 'ok' : 'bad'}">${ME.google ? 'เชื่อมแล้ว' : 'ยังไม่เชื่อม'}</span><button class="btn danger" id="disc">ยกเลิกการเชื่อม</button></div>
+    <section class="card"><div class="row between"><div><h2>${ME.admin ? 'Google Drive บริษัท' : 'บัญชี Google'}</h2><p class="small muted">${ME.admin ? (ME.google ? `เชื่อมกับ ${esc(ME.google_email || '')} · ไฟล์ของลูกค้าทุกคนจะเขียนลง Drive นี้` : 'ยังไม่ได้เชื่อม ลูกค้าแปลงไฟล์ได้แต่ยังส่งเข้า Drive ไม่ได้') : esc(ME.email)} · สิทธิ์ Drive: ${FEAT.driveScope === 'full' ? 'ทั้ง Drive (วางลิงก์โฟลเดอร์ได้)' : 'เฉพาะไฟล์ที่แอปสร้างหรือที่คุณเลือก'}</p></div>
+      <span class="chip ${ME.google ? 'ok' : 'bad'}">${ME.google ? 'เชื่อมแล้ว' : 'ยังไม่เชื่อม'}</span>
+      ${ME.admin ? (FEAT.googleConfigured ? `<a class="btn primary" href="/auth/google">${ME.google ? 'เปลี่ยนบัญชี Google' : 'เชื่อม Google Drive'}</a>` : '<span class="small muted">ใส่ GOOGLE_CLIENT_ID / SECRET ใน Railway ก่อน</span>') : ''}
+      ${ME.google ? '<button class="btn danger" id="disc">ยกเลิกการเชื่อม</button>' : ''}</div>
       <label class="field" for="dfolder">โฟลเดอร์เริ่มต้นใน Drive (รวม Shared drive)</label>
       <div class="row"><input id="dfolder" type="url" class="code" placeholder="${esc(s.defaultFolderName ? `ตอนนี้: ${s.defaultFolderName}` : 'ถ้าไม่ตั้ง ระบบสร้างโฟลเดอร์ “Link2Doc” ให้')}" style="flex:1 1 320px;min-width:0">${FEAT.picker ? '<button class="btn" id="pickF">เลือกจาก Drive</button>' : ''}</div></section>
     <section class="card"><div class="row between"><div><h2>Dify</h2><p class="small muted">ใช้ Knowledge API ส่ง Markdown เข้าเป็นเอกสาร และอัปเดตเอกสารเดิมเมื่อดึงซ้ำ</p></div><span class="chip ${s.dify ? 'ok' : ''}">${s.dify ? 'เชื่อมแล้ว' : 'ยังไม่เชื่อม'}</span></div>
@@ -575,7 +593,7 @@ views.settings = async () => {
       <textarea id="tpl" rows="6" class="code">${esc(s.headerTemplate || '---\ntitle: {title}\nsource_url: {url}\nfetched_at: {fetched_at}\n---')}</textarea>
       <div class="row end"><button class="btn primary" id="save">บันทึกการตั้งค่า</button></div></section>`;
   if (s.dify) api('/api/dify/datasets').then(r => { $('#dds').innerHTML = '<option value="">—</option>' + r.data.map(d => `<option value="${esc(d.id)}" ${s.dify.default_dataset_id === d.id ? 'selected' : ''}>${esc(d.name)}</option>`).join(''); }).catch(() => {});
-  $('#disc').onclick = async () => { await api('/api/google/disconnect', { method: 'POST' }); location.hash = '#/login'; location.reload(); };
+  if ($('#disc')) $('#disc').onclick = async () => { await api('/api/google/disconnect', { method: 'POST' }); if (!ME.admin) location.hash = '#/login'; location.reload(); };
   const pf = $('#pickF'); if (pf) pf.onclick = async () => { const d = await pick('folder').catch(fail); if (d) $('#dfolder').value = d.url || d.id; };
   $('#save').onclick = async () => { try { const r = await api('/api/settings', { method: 'PUT', body: { headerTemplate: $('#tpl').value, defaultFolder: $('#dfolder').value.trim() || null } }); toast(r.folderName ? `บันทึกแล้ว · โฟลเดอร์: ${r.folderName}` : 'บันทึกแล้ว'); } catch (e) { fail(e); } };
   const dsave = () => api('/api/dify', { method: 'PUT', body: { baseUrl: $('#durl').value.trim(), apiKey: $('#dkey').value.trim() || null, defaultDatasetId: $('#dds').value || null, indexing: $('#didx').value } });
@@ -593,15 +611,24 @@ async function route() {
   if (!ME && name !== 'login') { location.hash = '#/login'; return; }
   $('#topbar').hidden = !ME;
   $$('.mainnav a').forEach(a => a.classList.toggle('on', a.dataset.nav === (name === 'pdf' || name === 'job' ? 'new' : name)));
+  if (ME?.guest && name === 'settings') { location.hash = '#/new'; return; }
   (views[name] || views.new)(arg);
+  if (ME?.guest && !ME.ready && (name === 'new' || name === 'pdf')) {
+    app.insertAdjacentHTML('afterbegin', '<div class="alert" role="status" style="margin-bottom:16px;background:#FFF4DE;color:#7A4B00">ตอนนี้แปลงและพรีวิว Markdown ได้แล้ว แต่ระบบยังไม่ได้เชื่อม Google Drive ของบริษัท จึงยังส่งเข้า Drive ไม่ได้</div>');
+  }
   window.scrollTo(0, 0);
 }
 
 (async () => {
   const me = await api('/api/me').catch(() => ({ user: null }));
   ME = me.user; FEAT = me.features || {};
-  if (ME) { $('#email').textContent = ME.email; $('#avatar').textContent = (ME.name || ME.email)[0].toUpperCase(); }
-  $('#logout').onclick = async () => { await api('/auth/logout', { method: 'POST' }); location.hash = '#/login'; location.reload(); };
+  if (ME) { $('#email').textContent = ME.guest ? 'ผู้ใช้ทั่วไป' : ME.email; $('#avatar').textContent = ME.guest ? '?' : (ME.name || ME.email)[0].toUpperCase(); }
+  $('#logout').onclick = async () => { await api('/auth/logout', { method: 'POST' }); location.hash = FEAT.public ? '#/new' : '#/login'; location.reload(); };
+  if (ME?.guest) {
+    $('[data-nav=settings]').hidden = true;
+    $('#logout').textContent = 'ผู้ดูแล';
+    $('#logout').onclick = () => { location.hash = '#/login'; };
+  }
   window.addEventListener('hashchange', route);
   if (ME && (!location.hash || location.hash === '#/login')) location.hash = '#/new'; else route();
 })();

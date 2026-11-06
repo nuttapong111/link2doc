@@ -90,12 +90,15 @@ func NewRouter(cfg *config.Config, s Services, static fs.FS) *gin.Engine {
 	if cfg.DevLogin {
 		r.GET("/auth/dev", h.devLogin)
 	}
+	r.POST("/auth/login", h.passwordLogin)
 	r.POST("/auth/logout", func(c *gin.Context) { h.sess.Logout(c); c.JSON(200, gin.H{"ok": true}) })
 	r.GET("/api/me", h.me)
 
 	api := r.Group("/api", h.sess.RequireAuth)
-	api.POST("/google/disconnect", h.disconnect)
-	api.GET("/google/picker", h.picker)
+	// Company-only endpoints: guests (public mode) cannot change settings or browse Drive.
+	staff := api.Group("", h.requireStaff)
+	staff.POST("/google/disconnect", h.disconnect)
+	staff.GET("/google/picker", h.picker)
 
 	api.POST("/jobs", h.createJob)
 	api.GET("/jobs", h.listJobs)
@@ -113,12 +116,12 @@ func NewRouter(cfg *config.Config, s Services, static fs.FS) *gin.Engine {
 	api.POST("/schedules/:itemId/run", h.runSchedule)
 
 	api.GET("/settings", h.getSettings)
-	api.PUT("/settings", h.putSettings)
-	api.POST("/drive/check-folder", h.checkFolder)
-	api.POST("/site-rules", h.saveRule)
-	api.POST("/site-rules/test", h.testRule)
-	api.DELETE("/site-rules/:id", h.deleteRule)
-	api.PUT("/dify", h.saveDify)
+	staff.PUT("/settings", h.putSettings)
+	staff.POST("/drive/check-folder", h.checkFolder)
+	staff.POST("/site-rules", h.saveRule)
+	staff.POST("/site-rules/test", h.testRule)
+	staff.DELETE("/site-rules/:id", h.deleteRule)
+	staff.PUT("/dify", h.saveDify)
 	api.GET("/dify/datasets", h.difyDatasets)
 
 	api.POST("/pdf/upload", h.uploadPDF)
@@ -152,10 +155,40 @@ func NewRouter(cfg *config.Config, s Services, static fs.FS) *gin.Engine {
 
 // ---------- auth ----------
 
+func (h *Handler) requireStaff(c *gin.Context) {
+	if h.auth.IsGuest(c, uid(c)) {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "เฉพาะผู้ดูแลระบบ"})
+		return
+	}
+	c.Next()
+}
+
+func (h *Handler) passwordLogin(c *gin.Context) {
+	var b struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	_ = c.ShouldBindJSON(&b)
+	id, err := h.auth.PasswordLogin(c, b.Username, b.Password)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	h.sess.Login(c, id)
+	c.JSON(200, gin.H{"ok": true})
+}
+
 func (h *Handler) googleStart(c *gin.Context) {
 	if !h.cfg.GoogleConfigured() {
 		c.String(503, "ยังไม่ได้ตั้งค่า GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET ใน Railway")
 		return
+	}
+	if h.cfg.PublicMode {
+		// In public mode Google is only used to connect the company Drive to the admin account.
+		if id := h.sess.UserID(c); id == 0 || h.auth.IsGuest(c, id) {
+			c.Redirect(http.StatusFound, "/#/login")
+			return
+		}
 	}
 	c.Redirect(http.StatusFound, h.auth.Auth.AuthURL(h.sess.NewState(c)))
 }
@@ -163,6 +196,24 @@ func (h *Handler) googleStart(c *gin.Context) {
 func (h *Handler) googleCallback(c *gin.Context) {
 	if !h.sess.CheckState(c, c.Query("state")) {
 		c.String(400, "เซสชันเข้าสู่ระบบหมดอายุ กรุณาลองใหม่")
+		return
+	}
+	if cur := h.sess.UserID(c); cur != 0 && !h.auth.IsGuest(c, cur) && h.cfg.PublicMode {
+		if err := h.auth.LinkGoogle(c, cur, c.Query("code")); err != nil {
+			var ae *domain.AppError
+			if errors.As(err, &ae) {
+				c.String(ae.Status, ae.Message)
+			} else {
+				log.Printf("google link: %v", err)
+				c.String(500, "เชื่อม Google ไม่สำเร็จ: "+err.Error())
+			}
+			return
+		}
+		c.Redirect(http.StatusFound, "/#/settings")
+		return
+	}
+	if h.cfg.PublicMode {
+		c.String(403, "เข้าสู่ระบบผู้ดูแลก่อน แล้วค่อยเชื่อม Google Drive")
 		return
 	}
 	id, err := h.auth.SignIn(c, c.Query("code"))
@@ -192,15 +243,20 @@ func (h *Handler) devLogin(c *gin.Context) {
 
 func (h *Handler) me(c *gin.Context) {
 	id := h.sess.UserID(c)
-	if id == 0 {
-		c.JSON(200, gin.H{"user": nil})
-		return
-	}
 	me, err := h.auth.Me(c, id)
-	if errors.Is(err, domain.ErrNotFound) {
-		h.sess.Logout(c)
-		c.JSON(200, gin.H{"user": nil})
-		return
+	if id == 0 || errors.Is(err, domain.ErrNotFound) {
+		if !h.cfg.PublicMode {
+			h.sess.Logout(c)
+			c.JSON(200, gin.H{"user": nil})
+			return
+		}
+		// Public mode: every visitor gets a guest account so the converter opens straight away.
+		if id, err = h.auth.NewGuest(c); err != nil {
+			fail(c, err)
+			return
+		}
+		h.sess.Login(c, id)
+		me, err = h.auth.Me(c, id)
 	}
 	if err != nil {
 		fail(c, err)
@@ -208,13 +264,23 @@ func (h *Handler) me(c *gin.Context) {
 	}
 	c.JSON(200, gin.H{"user": me, "features": gin.H{
 		"pdf": h.pdf.Enabled(), "browser": false, "driveScope": h.cfg.DriveScopeMode,
-		"picker": h.cfg.GoogleAPIKey != "" && h.cfg.GoogleAppID != "", "maxLinks": h.cfg.MaxLinksPerJob,
+		"picker": h.cfg.GoogleAPIKey != "" && h.cfg.GoogleAppID != "" && !me.Guest, "maxLinks": maxLinks(h.cfg, me.Guest),
+		"public": h.cfg.PublicMode, "googleConfigured": h.cfg.GoogleConfigured(),
 	}})
+}
+
+func maxLinks(cfg *config.Config, guest bool) int {
+	if guest {
+		return min(cfg.MaxLinksPerJob, cfg.GuestMaxLinks)
+	}
+	return cfg.MaxLinksPerJob
 }
 
 func (h *Handler) disconnect(c *gin.Context) {
 	err := h.auth.Disconnect(c, uid(c))
-	h.sess.Logout(c)
+	if me, e := h.auth.Me(c, uid(c)); e == nil && !me.Admin {
+		h.sess.Logout(c) // Google-login users lose their sign-in; the password admin stays signed in
+	}
 	ok(c, err)
 }
 

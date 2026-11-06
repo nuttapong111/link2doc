@@ -25,7 +25,11 @@ func (s *PublishService) resolveFolder(ctx context.Context, g domain.GoogleDocs,
 	if id := domain.ParseDriveID(domain.Str(job.FolderID)); id != "" {
 		return id, nil
 	}
-	st, err := s.Settings.Get(ctx, job.UserID)
+	acct, err := s.accountFor(ctx, job.UserID, true)
+	if err != nil {
+		return "", err
+	}
+	st, err := s.Settings.Get(ctx, acct)
 	if err != nil {
 		return "", err
 	}
@@ -36,7 +40,7 @@ func (s *PublishService) resolveFolder(ctx context.Context, g domain.GoogleDocs,
 	if err != nil {
 		return "", err
 	}
-	return id, s.Settings.SetDefaultFolder(ctx, job.UserID, id, "Link2Doc")
+	return id, s.Settings.SetDefaultFolder(ctx, acct, id, "Link2Doc")
 }
 
 func (s *PublishService) toGoogle(ctx context.Context, job *domain.Job, items []domain.Item) (docID, folderID, layout string, results []publishResult, warnings []string, err error) {
